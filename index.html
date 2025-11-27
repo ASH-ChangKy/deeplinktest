@@ -1,18 +1,158 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="zh-cn">
 <head>
-  <meta charset="UTF-8">
-  <title>トップページ</title>
+  <meta charset="UTF-8" />
+  <title>带 QRCode 的书页模板（1-100）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- QRCode.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      height: 100vh;
+      background: #000;
+      color: #eee;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部控制条 */
+    .control-bar {
+      padding: 6px 10px;
+      font-size: 13px;
+      background: #111;
+      color: #ccc;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #333;
+      z-index: 10;
+    }
+    .control-bar input[type="number"] {
+      width: 70px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      background: #000;
+      color: #eee;
+    }
+    .control-bar button {
+      padding: 3px 10px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      background: #3b82f6;
+      color: #fff;
+    }
+
+    /* 中央书页区域：黑底 + 白页 */
+    .page-area {
+      flex: 1;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+    }
+
+    .page {
+      background: #fff;
+      /* A4 比例 */
+      aspect-ratio: 210 / 297;
+      width: min(80vw, 80vh * 210 / 297);
+      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    /* 二维码容器：控制在纸页中间，不要太大 */
+    #qrcode {
+      width: 30%;          /* 占纸张宽度 30% */
+      aspect-ratio: 1 / 1; /* 保持正方形 */
+    }
+    /* 关键：让 QRCode.js 生成的内部 img/canvas 跟着容器缩放 */
+    #qrcode img,
+    #qrcode canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 页码小字 */
+    .page-number-text {
+      position: absolute;
+      bottom: 10px;
+      right: 16px;
+      font-size: 12px;
+      color: #555;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
-  <h1>トップページ</h1>
-  <button onclick="openLauncher()">アプリを起動する</button>
+  <!-- 顶部控制条 -->
+  <div class="control-bar">
+    <span>页码（1～100）：</span>
+    <input id="pageInput" type="number" min="1" max="100" value="1" />
+    <button id="genBtn">生成二维码</button>
+    <span style="font-size:12px; color:#999;">二维码内容只包含数字。</span>
+  </div>
+
+  <!-- 中央书页 -->
+  <div class="page-area">
+    <div class="page">
+      <div id="qrcode"></div>
+      <div class="page-number-text" id="pageNumberLabel">Page 1</div>
+    </div>
+  </div>
 
   <script>
-    function openLauncher() {
-      // ➡️ 重点！用绝对路径
-      window.open('./launcher.html', '_blank');
+    const pageInput = document.getElementById("pageInput");
+    const genBtn = document.getElementById("genBtn");
+    const pageNumberLabel = document.getElementById("pageNumberLabel");
+
+    const qrContainer = document.getElementById("qrcode");
+
+    // 初始化 QRCode
+    let qr = new QRCode(qrContainer, {
+      text: "1",
+      width: 256,   // 实际内部大小（会被 CSS 再缩放）
+      height: 256,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H
+    });
+
+    function updateQr() {
+      let value = pageInput.value.trim();
+      const num = Number(value);
+
+      if (!Number.isInteger(num) || num < 1 || num > 100) return;
+
+      qr.clear();
+      qr.makeCode(String(num));
+      pageNumberLabel.textContent = "Page " + num;
     }
+
+    genBtn.addEventListener("click", updateQr);
+    pageInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") updateQr();
+    });
+
+    // 初始
+    updateQr();
   </script>
 </body>
 </html>
