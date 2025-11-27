@@ -2,18 +2,14 @@
 <html lang="zh-cn">
 <head>
   <meta charset="UTF-8" />
-  <title>带绿色边框 + QRCode 的书页模板（1-100）</title>
+  <title>带绿色边框 + QRCode 翻页书页（1-100）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <!-- QRCode.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       height: 100vh;
       background: #000;
@@ -53,8 +49,11 @@
       background: #3b82f6;
       color: #fff;
     }
+    .control-bar button:active {
+      transform: scale(0.96);
+    }
 
-    /* 中央书页区域：黑底 + 白页 + 绿色外框 */
+    /* 中央书页区域 */
     .page-area {
       flex: 1;
       background: #000;
@@ -66,47 +65,45 @@
 
     .page {
       background: #fff;
-      /* A4 比例 */
-      aspect-ratio: 210 / 297;
+      aspect-ratio: 210 / 297;  /* A4 纸比例 */
       width: min(80vw, 80vh * 210 / 297);
+
+      /* ⭐绿色边框⭐ */
+      border: 18px solid #00ff00;
+
       box-shadow: 0 0 20px rgba(0,0,0,0.6);
       border-radius: 4px;
-      position: relative;
-
-      /* ⭐ 绿色边框（给 AR 识别用）⭐ */
-      border: 18px solid #00ff00;
 
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: hidden; /* 防止内部内容溢出到外面 */
+      position: relative;
+      overflow: hidden;
     }
 
-    /* 内部内容区域（扣掉绿色边框之后的“纸内”区域） */
     .page-inner {
       width: 100%;
       height: 100%;
       background: #fff;
+
       display: flex;
       align-items: center;
       justify-content: center;
       position: relative;
     }
 
-    /* 二维码容器：控制在纸页中间，不要太大 */
+    /* QR 码 */
     #qrcode {
-      width: 30%;          /* 占纸张宽度 30% */
-      aspect-ratio: 1 / 1; /* 保持正方形 */
+      width: 30%;
+      aspect-ratio: 1 / 1;
     }
-    /* 让 QRCode.js 生成的内部 img/canvas 跟着容器缩放 */
-    #qrcode img,
-    #qrcode canvas {
+    #qrcode img, #qrcode canvas {
       width: 100%;
       height: 100%;
       display: block;
     }
 
-    /* 页码小字，放在纸内右下角 */
+    /* 页码 */
     .page-number-text {
       position: absolute;
       bottom: 10px;
@@ -116,23 +113,23 @@
       user-select: none;
     }
 
-    /* 小提示文字 */
-    .hint {
-      font-size: 11px;
-      color: #888;
-    }
+    /* 底部翻页提示 */
+    .hint { font-size: 11px; color: #888; margin-left: 6px; }
   </style>
 </head>
 <body>
+
   <!-- 顶部控制条 -->
   <div class="control-bar">
-    <span>页码（1～100）：</span>
+    <button id="prevBtn">上一页</button>
+    <button id="nextBtn">下一页</button>
+    <span>跳转到：</span>
     <input id="pageInput" type="number" min="1" max="100" value="1" />
-    <button id="genBtn">生成二维码</button>
-    <span class="hint">二维码内容只包含数字，中间为 QR，四周绿色边框给 AR 用。</span>
+    <button id="goBtn">GO</button>
+    <span class="hint">可用 ← → 键翻页</span>
   </div>
 
-  <!-- 中央书页 -->
+  <!-- 中央书页 display -->
   <div class="page-area">
     <div class="page">
       <div class="page-inner">
@@ -143,40 +140,77 @@
   </div>
 
   <script>
+    let currentPage = 1;
+
+    const MAX_PAGE = 100;
+
     const pageInput = document.getElementById("pageInput");
-    const genBtn = document.getElementById("genBtn");
     const pageNumberLabel = document.getElementById("pageNumberLabel");
+
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const goBtn   = document.getElementById("goBtn");
 
     const qrContainer = document.getElementById("qrcode");
 
-    // 初始化 QRCode
+    // 初始化二维码
     let qr = new QRCode(qrContainer, {
       text: "1",
-      width: 256,   // 内部原始大小（由 CSS 再缩放）
+      width: 256,
       height: 256,
       colorDark: "#000000",
       colorLight: "#ffffff",
       correctLevel: QRCode.CorrectLevel.H
     });
 
-    function updateQr() {
-      let value = pageInput.value.trim();
-      const num = Number(value);
+    /** 更新二维码 + 页码显示 */
+    function updatePage(n) {
+      if (n < 1 || n > MAX_PAGE) return;
 
-      if (!Number.isInteger(num) || num < 1 || num > 100) return;
+      currentPage = n;
 
       qr.clear();
-      qr.makeCode(String(num));
-      pageNumberLabel.textContent = "Page " + num;
+      qr.makeCode(String(n));
+
+      pageInput.value = n;
+      pageNumberLabel.textContent = "Page " + n;
     }
 
-    genBtn.addEventListener("click", updateQr);
-    pageInput.addEventListener("keydown", e => {
-      if (e.key === "Enter") updateQr();
+    // 上一页
+    prevBtn.addEventListener("click", () => {
+      if (currentPage > 1) updatePage(currentPage - 1);
     });
 
-    // 初始一页
-    updateQr();
+    // 下一页
+    nextBtn.addEventListener("click", () => {
+      if (currentPage < MAX_PAGE) updatePage(currentPage + 1);
+    });
+
+    // 跳转
+    goBtn.addEventListener("click", () => {
+      const target = Number(pageInput.value);
+      if (target >= 1 && target <= MAX_PAGE) {
+        updatePage(target);
+      }
+    });
+
+    // 回车跳转
+    pageInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") goBtn.click();
+    });
+
+    // 键盘左右键翻页
+    window.addEventListener("keydown", e => {
+      if (e.key === "ArrowLeft") {
+        if (currentPage > 1) updatePage(currentPage - 1);
+      } else if (e.key === "ArrowRight") {
+        if (currentPage < MAX_PAGE) updatePage(currentPage + 1);
+      }
+    });
+
+    // 初始渲染
+    updatePage(1);
   </script>
+
 </body>
 </html>
