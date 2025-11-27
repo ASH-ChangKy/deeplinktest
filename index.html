@@ -2,215 +2,487 @@
 <html lang="zh-cn">
 <head>
   <meta charset="UTF-8" />
-  <title>带绿色边框 + QRCode 翻页书页（1-100）</title>
+  <title>AR 书页 Demo（黑背景 + 预测跟随版）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- QRCode.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+  </script>
+
+  <!-- jsQR -->
+  <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
 
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      height: 100vh;
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
       background: #000;
       color: #eee;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      display: flex;
-      flex-direction: column;
     }
 
-    /* 顶部控制条 */
-    .control-bar {
-      padding: 6px 10px;
+    /* 顶部工具栏 */
+    #topbar {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      padding: 8px 14px;
+      border-radius: 10px;
       font-size: 13px;
-      background: #111;
-      color: #ccc;
+      z-index: 20;
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
       gap: 8px;
-      border-bottom: 1px solid #333;
-      z-index: 10;
-    }
-    .control-bar input[type="number"] {
-      width: 70px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      border: 1px solid #555;
-      background: #000;
-      color: #eee;
-    }
-    .control-bar button {
-      padding: 3px 10px;
-      border-radius: 4px;
-      border: none;
-      cursor: pointer;
-      font-size: 13px;
-      background: #3b82f6;
-      color: #fff;
-    }
-    .control-bar button:active {
-      transform: scale(0.96);
-    }
-
-    /* 中央书页区域 */
-    .page-area {
-      flex: 1;
-      background: #000;
-      display: flex;
       align-items: center;
-      justify-content: center;
-      padding: 8px;
+      white-space: nowrap;
     }
-
-    .page {
-      background: #fff;
-      aspect-ratio: 210 / 297;  /* A4 纸比例 */
-      width: min(80vw, 80vh * 210 / 297);
-
-      /* ⭐绿色边框⭐ */
-      border: 18px solid #00ff00;
-
-      box-shadow: 0 0 20px rgba(0,0,0,0.6);
-      border-radius: 4px;
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .page-inner {
-      width: 100%;
-      height: 100%;
-      background: #fff;
-
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-    }
-
-    /* QR 码 */
-    #qrcode {
-      width: 30%;
-      aspect-ratio: 1 / 1;
-    }
-    #qrcode img, #qrcode canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
-    /* 页码 */
-    .page-number-text {
-      position: absolute;
-      bottom: 10px;
-      right: 16px;
+    #topbar input[type="file"] {
       font-size: 12px;
-      color: #555;
-      user-select: none;
+      color: #ddd;
+    }
+    #topbar span {
+      font-size: 12px;
     }
 
-    /* 底部翻页提示 */
-    .hint { font-size: 11px; color: #888; margin-left: 6px; }
+    /* 状态栏 */
+    #status {
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.7);
+      padding: 6px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      z-index: 20;
+    }
+    #status strong {
+      color: #4ade80;
+    }
+
+    /* 摄像头元素隐藏，只当数据源用 */
+    #camera {
+      display: none;
+    }
+
+    /* AR 叠加层：只画“书页”，底下是纯黑 */
+    #overlayCanvas {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    /* 隐藏的内部 canvas */
+    #scanCanvas,
+    #pdfPageCanvas {
+      display: none;
+    }
   </style>
 </head>
 <body>
-
-  <!-- 顶部控制条 -->
-  <div class="control-bar">
-    <button id="prevBtn">上一页</button>
-    <button id="nextBtn">下一页</button>
-    <span>跳转到：</span>
-    <input id="pageInput" type="number" min="1" max="100" value="1" />
-    <button id="goBtn">GO</button>
-    <span class="hint">可用 ← → 键翻页</span>
+  <div id="topbar">
+    <span>PDF：</span>
+    <input id="pdfInput" type="file" accept="application/pdf" />
+    <span id="pageInfo">当前页：- / -</span>
+    <span style="font-size:12px;color:#aaa;">（← → 键也可以翻页）</span>
   </div>
 
-  <!-- 中央书页 display -->
-  <div class="page-area">
-    <div class="page">
-      <div class="page-inner">
-        <div id="qrcode"></div>
-        <div class="page-number-text" id="pageNumberLabel">Page 1</div>
-      </div>
-    </div>
+  <!-- 摄像头只当数据源，不显示 -->
+  <video id="camera" playsinline autoplay muted></video>
+  <!-- 黑色空间里漂浮的“书页” -->
+  <canvas id="overlayCanvas"></canvas>
+
+  <div id="status">
+    二维码：<span id="qrInfo"><strong>未识别</strong></span>　
+    页控：<span id="ctrlInfo"><strong>暂无</strong></span>　
+    PDF：<span id="pdfInfo"><strong>未加载</strong></span>
   </div>
+
+  <!-- 内部用：缩小版扫描画布 / PDF 页面画布 -->
+  <canvas id="scanCanvas"></canvas>
+  <canvas id="pdfPageCanvas"></canvas>
 
   <script>
+    // ==== 可调参数 ====
+    const PDF_SCALE         = 1.6;  // PDF 清晰度：1.5~2 之间
+    const SLICES            = 90;   // 透视切片数量
+    const PAPER_WIDTH_UNITS = 2.6;  // 纸张宽度 = QR 尺寸 * 倍数（越大纸越大）
+    const A4_RATIO          = 1.414; // A4 高/宽比例
+    const SCAN_SCALE        = 0.5;   // QR 扫描用画布缩放：0.4~0.6（越小越快）
+
+    // 预测相关参数
+    const MAX_MISSING_FRAMES = 10;   // 最多预测多少帧
+    const VELOCITY_DAMPING   = 0.9;  // 速度衰减系数（0~1，越小“慢慢停下”）
+
+    // ---------- DOM ----------
+    const video         = document.getElementById("camera");
+    const overlayCanvas = document.getElementById("overlayCanvas");
+    const overlayCtx    = overlayCanvas.getContext("2d");
+
+    const scanCanvas    = document.getElementById("scanCanvas");
+    const scanCtx       = scanCanvas.getContext("2d");
+
+    const pdfPageCanvas = document.getElementById("pdfPageCanvas");
+    const pdfPageCtx    = pdfPageCanvas.getContext("2d");
+
+    const pdfInput  = document.getElementById("pdfInput");
+    const pageInfo  = document.getElementById("pageInfo");
+    const qrInfo    = document.getElementById("qrInfo");
+    const ctrlInfo  = document.getElementById("ctrlInfo");
+    const pdfInfo   = document.getElementById("pdfInfo");
+
+    // ---------- PDF 状态 ----------
+    let pdfDoc      = null;
     let currentPage = 1;
 
-    const MAX_PAGE = 100;
-
-    const pageInput = document.getElementById("pageInput");
-    const pageNumberLabel = document.getElementById("pageNumberLabel");
-
-    const prevBtn = document.getElementById("prevBtn");
-    const nextBtn = document.getElementById("nextBtn");
-    const goBtn   = document.getElementById("goBtn");
-
-    const qrContainer = document.getElementById("qrcode");
-
-    // 初始化二维码
-    let qr = new QRCode(qrContainer, {
-      text: "1",
-      width: 256,
-      height: 256,
-      colorDark: "#000000",
-      colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.H
-    });
-
-    /** 更新二维码 + 页码显示 */
-    function updatePage(n) {
-      if (n < 1 || n > MAX_PAGE) return;
-
-      currentPage = n;
-
-      qr.clear();
-      qr.makeCode(String(n));
-
-      pageInput.value = n;
-      pageNumberLabel.textContent = "Page " + n;
+    function updatePageInfo() {
+      if (!pdfDoc) {
+        pageInfo.textContent = "当前页：- / -";
+      } else {
+        pageInfo.textContent = `当前页：${currentPage} / ${pdfDoc.numPages}`;
+      }
     }
 
-    // 上一页
-    prevBtn.addEventListener("click", () => {
-      if (currentPage > 1) updatePage(currentPage - 1);
+    function renderPdfPage(pageNum) {
+      if (!pdfDoc) return Promise.resolve();
+      return pdfDoc.getPage(pageNum).then(page => {
+        const viewport = page.getViewport({ scale: PDF_SCALE });
+        pdfPageCanvas.width  = viewport.width;
+        pdfPageCanvas.height = viewport.height;
+        const renderContext = { canvasContext: pdfPageCtx, viewport };
+        return page.render(renderContext).promise;
+      });
+    }
+
+    // 选择 PDF
+    pdfInput.addEventListener("change", e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+
+      pdfInfo.innerHTML = "<strong>加载中...</strong>";
+      pdfjsLib.getDocument(url).promise
+        .then(doc => {
+          pdfDoc = doc;
+          currentPage = 1;
+          ctrlInfo.innerHTML = "<strong>已切到第一页</strong>";
+          return renderPdfPage(currentPage);
+        })
+        .then(() => {
+          pdfInfo.innerHTML = `<strong>已加载</strong>（共 ${pdfDoc.numPages} 页）`;
+          updatePageInfo();
+        })
+        .catch(err => {
+          console.error(err);
+          pdfInfo.innerHTML = '<strong style="color:#f97373;">加载失败</strong>';
+        });
     });
 
-    // 下一页
-    nextBtn.addEventListener("click", () => {
-      if (currentPage < MAX_PAGE) updatePage(currentPage + 1);
-    });
-
-    // 跳转
-    goBtn.addEventListener("click", () => {
-      const target = Number(pageInput.value);
-      if (target >= 1 && target <= MAX_PAGE) {
-        updatePage(target);
-      }
-    });
-
-    // 回车跳转
-    pageInput.addEventListener("keydown", e => {
-      if (e.key === "Enter") goBtn.click();
-    });
-
-    // 键盘左右键翻页
-    window.addEventListener("keydown", e => {
+    // 键盘翻页：← / →
+    window.addEventListener("keydown", (e) => {
+      if (!pdfDoc) return;
       if (e.key === "ArrowLeft") {
-        if (currentPage > 1) updatePage(currentPage - 1);
+        if (currentPage > 1) {
+          currentPage--;
+          renderPdfPage(currentPage).then(() => {
+            updatePageInfo();
+            ctrlInfo.innerHTML = "键盘翻页：<strong>上一页</strong>";
+          });
+        }
       } else if (e.key === "ArrowRight") {
-        if (currentPage < MAX_PAGE) updatePage(currentPage + 1);
+        if (currentPage < pdfDoc.numPages) {
+          currentPage++;
+          renderPdfPage(currentPage).then(() => {
+            updatePageInfo();
+            ctrlInfo.innerHTML = "键盘翻页：<strong>下一页</strong>";
+          });
+        }
       }
     });
 
-    // 初始渲染
-    updatePage(1);
-  </script>
+    // 扫码翻页
+    function jumpToPageFromQr(num) {
+      if (!pdfDoc) return;
+      if (num < 1 || num > pdfDoc.numPages) {
+        ctrlInfo.innerHTML =
+          `识别到 <strong>${num}</strong>，但超出 PDF 页数范围（共 ${pdfDoc.numPages} 页）`;
+        return;
+      }
+      currentPage = num;
+      renderPdfPage(currentPage).then(() => {
+        updatePageInfo();
+        ctrlInfo.innerHTML =
+          `扫码翻页：已切换到 <strong>第 ${num} 页</strong>`;
+      });
+    }
 
+    // ---------- 摄像头 ----------
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        video.srcObject = stream;
+
+        video.addEventListener("loadedmetadata", () => {
+          const w = video.videoWidth  || 640;
+          const h = video.videoHeight || 480;
+
+          overlayCanvas.width  = w;
+          overlayCanvas.height = h;
+
+          scanCanvas.width  = Math.floor(w * SCAN_SCALE);
+          scanCanvas.height = Math.floor(h * SCAN_SCALE);
+
+          video.play();
+          requestAnimationFrame(mainLoop);
+        });
+      } catch (err) {
+        console.error(err);
+        qrInfo.innerHTML =
+          '<strong style="color:#f97373;">无法访问摄像头</strong>';
+      }
+    }
+
+    // ---------- QR + 书页透视 + 预测 ----------
+    let lastQuad       = null;  // 上一次的纸张四边形
+    let velocityQuad   = null;  // 纸张运动速度（每帧的位移）
+    let missingFrames  = 0;     // 连续未识别 QR 的帧数
+
+    function mainLoop() {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        // 1. 缩小后用于扫描
+        scanCtx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+        const imgData = scanCtx.getImageData(
+          0, 0, scanCanvas.width, scanCanvas.height
+        );
+
+        const qrCode = jsQR(imgData.data, scanCanvas.width, scanCanvas.height, {
+          inversionAttempts: "attemptBoth"
+        });
+
+        // 2. 清空 overlay（黑背景中间画 PDF）
+        overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+        let quadToDraw = null;
+
+        if (qrCode) {
+          // 有 QR：更新姿态 + 速度
+          const text = (qrCode.data || "").trim();
+          qrInfo.innerHTML = `已识别：<strong>${text || "（空）"}</strong>`;
+
+          const scaleBack = 1 / SCAN_SCALE;
+          const qrQuad    = quadFromQr(qrCode, scaleBack);
+          const paperQuad = inferPaperQuadFromQr(qrQuad);
+
+          if (lastQuad) {
+            velocityQuad = subtractQuads(paperQuad, lastQuad);
+          } else {
+            velocityQuad = null;
+          }
+
+          lastQuad      = paperQuad;
+          quadToDraw    = paperQuad;
+          missingFrames = 0;
+
+          // ⚠ 这里改成：任何纯数字都当作页码（1～PDF总页数）
+          if (/^\d+$/.test(text)) {
+            const num = parseInt(text, 10);
+            if (!Number.isNaN(num)) {
+              jumpToPageFromQr(num);
+            }
+          }
+        } else {
+          // 没看到 QR：短时间预测
+          if (lastQuad && velocityQuad && missingFrames < MAX_MISSING_FRAMES) {
+            const predicted = addQuads(lastQuad, velocityQuad);
+
+            velocityQuad = scaleQuad(velocityQuad, VELOCITY_DAMPING);
+
+            lastQuad      = predicted;
+            quadToDraw    = predicted;
+            missingFrames++;
+
+            qrInfo.innerHTML =
+              `<strong>未识别，使用预测（${missingFrames}/${MAX_MISSING_FRAMES}）</strong>`;
+          } else if (lastQuad) {
+            quadToDraw = lastQuad;
+            qrInfo.innerHTML = "<strong>未识别（保持最后姿态）</strong>";
+          } else {
+            qrInfo.innerHTML = "<strong>未识别</strong>";
+          }
+        }
+
+        // 3. 在黑背景中画“漂浮的 PDF”
+        if (quadToDraw && pdfDoc && pdfPageCanvas.width > 0 && pdfPageCanvas.height > 0) {
+          drawPdfOnQuad(quadToDraw, pdfPageCanvas, overlayCtx);
+          drawQuadOutline(quadToDraw, overlayCtx);
+        }
+      }
+
+      requestAnimationFrame(mainLoop);
+    }
+
+    // 从 jsQR 结果 + 缩放系数 得到 overlayCanvas 坐标系下的四边形
+    function quadFromQr(qr, k) {
+      const loc = qr.location;
+      function scalePoint(p) {
+        return { x: p.x * k, y: p.y * k };
+      }
+      return {
+        tl: scalePoint(loc.topLeftCorner),
+        tr: scalePoint(loc.topRightCorner),
+        br: scalePoint(loc.bottomRightCorner),
+        bl: scalePoint(loc.bottomLeftCorner)
+      };
+    }
+
+    // 用 QR 顶边方向 + 高度方向 推一个 A4 比例的“纸张”
+    function inferPaperQuadFromQr(qrQuad) {
+      const { tl, tr, br, bl } = qrQuad;
+
+      const vx = tr.x - tl.x;
+      const vy = tr.y - tl.y;
+      const qrWidth = Math.hypot(vx, vy);
+
+      const ux = bl.x - tl.x;
+      const uy = bl.y - tl.y;
+      const qrHeight = Math.hypot(ux, uy);
+
+      const wx = vx / qrWidth;
+      const wy = vy / qrWidth;
+      const hx = ux / qrHeight;
+      const hy = uy / qrHeight;
+
+      const unit = (qrWidth + qrHeight) / 2;
+
+      const paperWidth  = unit * PAPER_WIDTH_UNITS;
+      const paperHeight = paperWidth * A4_RATIO;
+
+      const cx = (tl.x + tr.x + br.x + bl.x) / 4;
+      const cy = (tl.y + tr.y + br.y + bl.y) / 4;
+
+      const halfW = paperWidth  / 2;
+      const halfH = paperHeight / 2;
+
+      function makePoint(a, b) {
+        return {
+          x: cx + a * wx + b * hx,
+          y: cy + a * wy + b * hy
+        };
+      }
+
+      return {
+        tl: makePoint(-halfW, -halfH),
+        tr: makePoint( halfW, -halfH),
+        br: makePoint( halfW,  halfH),
+        bl: makePoint(-halfW,  halfH)
+      };
+    }
+
+    // 在四边形上贴 PDF（多条水平切片近似透视）
+    function drawPdfOnQuad(quad, pdfCanvas, ctx) {
+      const { tl, tr, br, bl } = quad;
+      const srcW = pdfCanvas.width;
+      const srcH = pdfCanvas.height;
+
+      const slices = SLICES;
+      const sliceH = srcH / slices;
+
+      for (let i = 0; i < slices; i++) {
+        const sy = i * sliceH;
+        const t0 = sy / srcH;
+        const t1 = (sy + sliceH) / srcH;
+
+        const pTL = lerpPoint(tl, bl, t0);
+        const pTR = lerpPoint(tr, br, t0);
+        const pBL = lerpPoint(tl, bl, t1);
+
+        const dx1 = pTR.x - pTL.x;
+        const dy1 = pTR.y - pTL.y;
+        const dx2 = pBL.x - pTL.x;
+        const dy2 = pBL.y - pTL.y;
+
+        ctx.save();
+        ctx.setTransform(
+          dx1 / srcW,
+          dy1 / srcW,
+          dx2 / sliceH,
+          dy2 / sliceH,
+          pTL.x,
+          pTL.y
+        );
+
+        ctx.drawImage(
+          pdfCanvas,
+          0, sy, srcW, sliceH,
+          0, 0, srcW, sliceH
+        );
+
+        ctx.restore();
+      }
+    }
+
+    function lerpPoint(p1, p2, t) {
+      return {
+        x: p1.x + (p2.x - p1.x) * t,
+        y: p1.y + (p2.y - p1.y) * t
+      };
+    }
+
+    function drawQuadOutline(quad, ctx) {
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(72,255,128,0.9)";
+      ctx.beginPath();
+      ctx.moveTo(quad.tl.x, quad.tl.y);
+      ctx.lineTo(quad.tr.x, quad.tr.y);
+      ctx.lineTo(quad.br.x, quad.br.y);
+      ctx.lineTo(quad.bl.x, quad.bl.y);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // --------- Quad 运算：用于预测位置 ---------
+    function subtractQuads(a, b) {
+      return {
+        tl: { dx: a.tl.x - b.tl.x, dy: a.tl.y - b.tl.y },
+        tr: { dx: a.tr.x - b.tr.x, dy: a.tr.y - b.tr.y },
+        br: { dx: a.br.x - b.br.x, dy: a.br.y - b.br.y },
+        bl: { dx: a.bl.x - b.bl.x, dy: a.bl.y - b.bl.y }
+      };
+    }
+
+    function addQuads(q, v) {
+      return {
+        tl: { x: q.tl.x + v.tl.dx, y: q.tl.y + v.tl.dy },
+        tr: { x: q.tr.x + v.tr.dx, y: q.tr.y + v.tr.dy },
+        br: { x: q.br.x + v.br.dx, y: q.br.y + v.br.dy },
+        bl: { x: q.bl.x + v.bl.dx, y: q.bl.y + v.bl.dy }
+      };
+    }
+
+    function scaleQuad(v, s) {
+      return {
+        tl: { dx: v.tl.dx * s, dy: v.tl.dy * s },
+        tr: { dx: v.tr.dx * s, dy: v.tr.dy * s },
+        br: { dx: v.br.dx * s, dy: v.br.dy * s },
+        bl: { dx: v.bl.dx * s, dy: v.bl.dy * s }
+      };
+    }
+
+    // 启动
+    initCamera();
+  </script>
 </body>
 </html>
